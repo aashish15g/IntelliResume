@@ -17,6 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const card = document.getElementById("card");
   const loader = document.getElementById("loader");
   const results = document.getElementById("results");
+  const resultsSummary = document.getElementById("resultsSummary");
   const scoreValue = document.getElementById("scoreValue");
   const strengthsList = document.getElementById("strengthsList");
   const skillGapsList = document.getElementById("skillGapsList");
@@ -36,6 +37,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let selectedFile = null;
   let chatsOpen = false;
+  let loaderInterval;
+
+  function startAnalysisAnimation() {
+    const steps = document.querySelectorAll(".analysis-step");
+
+    steps.forEach((step, index) => {
+      step.querySelector(".step-icon").textContent = index === 0 ? "⏳" : "○";
+      step.classList.remove("done");
+    });
+
+    let current = 0;
+
+    loaderInterval = setInterval(() => {
+      if (current > 0) {
+        const previous = steps[current - 1];
+        previous.querySelector(".step-icon").textContent = "✓";
+        previous.classList.add("done");
+      }
+
+      if (current < steps.length) {
+        steps[current].querySelector(".step-icon").textContent = "⏳";
+      }
+
+      current++;
+
+      if (current > steps.length) {
+        clearInterval(loaderInterval);
+      }
+    }, 1200);
+  }
+
+  function finishAnalysisAnimation() {
+    clearInterval(loaderInterval);
+
+    document.querySelectorAll(".analysis-step").forEach((step) => {
+      step.querySelector(".step-icon").textContent = "✓";
+      step.classList.add("done");
+    });
+  }
 
   /* ------------------------------------------------------------------ */
   /* Auth UI state                                                        */
@@ -47,8 +87,6 @@ document.addEventListener("DOMContentLoaded", () => {
     logoutBtn.style.display = isLoggedIn ? "" : "none";
   }
 
-  // On page load, ask the server whether the current session is logged in
-  // (handles refreshes / users who already had a valid session cookie).
   fetch("/me")
     .then((r) => r.json())
     .then((data) => updateAuthUI(data.loggedIn))
@@ -113,8 +151,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   jobInput.addEventListener("input", updateAnalyzeButton);
 
-  // Hint chips fill the search bar. Exposed on window since it's called
-  // from an inline onclick attribute in the HTML.
   window.setHint = function setHint(el) {
     jobInput.value = el.textContent;
     updateAnalyzeButton();
@@ -133,12 +169,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   newChatBtn.addEventListener("click", () => {
-    // Reset the page to a fresh state.
     clearFile();
     jobInput.value = "";
     updateAnalyzeButton();
     loader.classList.remove("show");
     analyzeBtn.textContent = "Analyze ↗";
+    results.classList.remove("show");
 
     document
       .querySelectorAll(".chat-item")
@@ -216,7 +252,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     error.classList.remove("show");
 
-    // TODO: wire to Flask /login route
     fetch("/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -255,7 +290,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     error.classList.remove("show");
 
-    // TODO: wire to Flask /register route
     fetch("/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -280,8 +314,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  // Types text into an element one character at a time, ChatGPT-style,
-  // with a blinking cursor while typing.
   async function typeText(el, text, speed = 12) {
     el.textContent = "";
     const cursor = document.createElement("span");
@@ -296,14 +328,13 @@ document.addEventListener("DOMContentLoaded", () => {
     cursor.remove();
   }
 
-  // Reveals list items one at a time, each with its own typewriter effect.
   async function typeList(listEl, items) {
     listEl.innerHTML = "";
     for (const item of items || []) {
       const li = document.createElement("li");
       listEl.appendChild(li);
       await typeText(li, item, 8);
-      await sleep(150); // brief pause between items
+      await sleep(150);
     }
   }
 
@@ -321,6 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function renderResults(feedback) {
     // Reset everything before starting the sequence.
     scoreValue.textContent = "0";
+    resultsSummary.textContent = "";
     strengthsList.innerHTML = "";
     skillGapsList.innerHTML = "";
     suggestionsList.innerHTML = "";
@@ -330,6 +362,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Reveal each section in sequence, like a conversational response
     // being written out rather than dumped on screen all at once.
+    await typeText(resultsSummary, feedback.summary ?? "", 10);
     await animateScore(feedback.score ?? 0);
     await typeList(strengthsList, feedback.strengths);
     await typeList(skillGapsList, feedback.skill_gaps);
@@ -344,6 +377,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!selectedFile || !jobInput.value.trim()) return;
 
     loader.classList.add("show");
+    startAnalysisAnimation();
     analyzeBtn.disabled = true;
     analyzeBtn.textContent = "Analyzing…";
 
@@ -357,18 +391,29 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .then((response) => response.json())
       .then(async (data) => {
-        loader.classList.remove("show");
-        analyzeBtn.disabled = false;
-        analyzeBtn.textContent = "Analyze ↗";
-
         if (data.success) {
+          finishAnalysisAnimation();
+          await sleep(500);
+
+          loader.classList.remove("show");
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = "Analyze ↗";
+
           await renderResults(data.feedback);
         } else {
+          clearInterval(loaderInterval);
+
+          loader.classList.remove("show");
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = "Analyze ↗";
+
           console.error("Analysis failed:", data.message);
           // TODO: show data.message somewhere visible to the user
         }
       })
       .catch((error) => {
+        clearInterval(loaderInterval);
+
         loader.classList.remove("show");
         analyzeBtn.disabled = false;
         analyzeBtn.textContent = "Analyze ↗";
