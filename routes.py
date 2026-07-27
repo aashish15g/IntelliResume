@@ -101,5 +101,75 @@ def register_routes(app,db,bcrypt):
         return jsonify({'success': True, 'analysis_id': analysis.id, 'feedback': feedback})
 
 
-        
-    
+    @app.route('/history')
+    @login_required
+    def history():
+        analyses = (
+        Analysis.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Analysis.created_at.desc())
+        .all()
+    )
+ 
+        return jsonify({
+            'success': True,
+            'analyses': [
+                {
+                'id': a.id,
+                'job_title': a.job_title,
+                'created_at': a.created_at.isoformat(),
+                }
+                for a in analyses
+            ],
+        })
+
+
+    @app.route('/analysis/<int:analysis_id>')
+    @login_required
+    def get_analysis(analysis_id):
+        analysis = Analysis.query.get(analysis_id)
+
+        if not analysis:
+            return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
+
+        if analysis.user_id != current_user.id:
+            return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
+
+        return jsonify({
+            'success': True,
+            'analysis_id': analysis.id,
+            'feedback': {
+            'score': analysis.score,
+            'strengths': analysis.strengths,
+            'skill_gaps': analysis.skill_gaps,
+            'suggestions': analysis.suggestions,
+        },
+    })
+
+   
+   
+   
+
+   
+ 
+   
+   
+ 
+   
+   
+   
+   
+ 
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+
+   

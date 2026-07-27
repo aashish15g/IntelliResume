@@ -78,6 +78,89 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Sidebar history                                                      */
+  /* ------------------------------------------------------------------ */
+
+  function formatHistoryDate(isoString) {
+    const date = new Date(isoString);
+    const today = new Date();
+    const isToday = date.toDateString() === today.toDateString();
+    if (isToday) return "Today";
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  function renderHistory(analyses) {
+    sidebarBody.innerHTML = "";
+
+    if (!analyses || analyses.length === 0) {
+      sidebarBody.innerHTML = `
+        <div class="chats-empty">
+          <span class="chats-empty-icon">📄</span>
+          <p class="chats-empty-text">Your past analyses will show up here.</p>
+        </div>
+      `;
+      return;
+    }
+
+    analyses.forEach((analysis) => {
+      const item = document.createElement("a");
+      item.className = "chat-item";
+      item.href = "#";
+      item.dataset.analysisId = analysis.id;
+      item.innerHTML = `
+        <span class="chat-item-icon">📄</span>
+        <span class="chat-item-text">${analysis.job_title}</span>
+        <span class="chat-item-date">${formatHistoryDate(analysis.created_at)}</span>
+      `;
+      sidebarBody.appendChild(item);
+    });
+  }
+
+  function loadHistory() {
+    fetch("/history")
+      .then((r) => r.json())
+      .then((data) => {
+        renderHistory(data.success ? data.analyses : []);
+      })
+      .catch(() => renderHistory([]));
+  }
+
+  loadHistory();
+
+  function loadAnalysis(analysisId) {
+    fetch(`/analysis/${analysisId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.success) {
+          console.error("Failed to load analysis:", data.message);
+          return;
+        }
+        renderResults(data.feedback, false);
+
+        document.querySelectorAll(".chat-item").forEach((el) => {
+          el.classList.toggle(
+            "active-chat",
+            el.dataset.analysisId === String(analysisId),
+          );
+        });
+      })
+      .catch((error) => console.error("Error loading analysis:", error));
+  }
+
+  // Event delegation: sidebarBody's contents are built dynamically by
+  // renderHistory(), so we listen on the stable parent container instead
+  // of attaching a listener to each chat-item individually.
+  sidebarBody.addEventListener("click", (e) => {
+    const item = e.target.closest(".chat-item");
+    if (!item) return;
+    e.preventDefault();
+    loadAnalysis(item.dataset.analysisId);
+  });
+
+  /* ------------------------------------------------------------------ */
   /* Auth UI state                                                        */
   /* ------------------------------------------------------------------ */
 
@@ -96,7 +179,10 @@ document.addEventListener("DOMContentLoaded", () => {
     fetch("/logout", { method: "POST" })
       .then((r) => r.json())
       .then((data) => {
-        if (data.success) updateAuthUI(false);
+        if (data.success) {
+          updateAuthUI(false);
+          loadHistory();
+        }
       })
       .catch((error) => console.error("Logout failed:", error));
   });
@@ -265,6 +351,7 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById("loginPassword").value = "";
           error.classList.remove("show");
           updateAuthUI(true);
+          loadHistory();
         } else {
           showModalError(error, data.message || "Invalid email or password.");
         }
@@ -328,6 +415,15 @@ document.addEventListener("DOMContentLoaded", () => {
     cursor.remove();
   }
 
+  function renderListInstant(listEl, items) {
+    listEl.innerHTML = "";
+    (items || []).forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      listEl.appendChild(li);
+    });
+  }
+
   async function typeList(listEl, items) {
     listEl.innerHTML = "";
     for (const item of items || []) {
@@ -349,7 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
     scoreValue.textContent = finalScore;
   }
 
-  async function renderResults(feedback) {
+  async function renderResults(feedback, animate = true) {
     // Reset everything before starting the sequence.
     scoreValue.textContent = "0";
     resultsSummary.textContent = "";
@@ -359,6 +455,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     results.classList.add("show");
     results.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    if (!animate) {
+      // Reopening a past analysis — show it instantly, no typewriter.
+      scoreValue.textContent = feedback.score ?? 0;
+      resultsSummary.textContent = feedback.summary ?? "";
+      renderListInstant(strengthsList, feedback.strengths);
+      renderListInstant(skillGapsList, feedback.skill_gaps);
+      renderListInstant(suggestionsList, feedback.suggestions);
+      return;
+    }
 
     // Reveal each section in sequence, like a conversational response
     // being written out rather than dumped on screen all at once.
@@ -400,6 +506,7 @@ document.addEventListener("DOMContentLoaded", () => {
           analyzeBtn.textContent = "Analyze ↗";
 
           await renderResults(data.feedback);
+          loadHistory();
         } else {
           clearInterval(loaderInterval);
 
