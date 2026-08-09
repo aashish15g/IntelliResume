@@ -39,16 +39,19 @@ def BuildPrompt(resume_text: str, job_title: str) -> str:
     ---
 
     Write each point in a natural, conversational tone — like ChatGPT would talk
-    to someone, not like a checklist. Use "you" and "your" directly. Be specific
+    to someone, not like a checklist. Use "you" and "your" directly. Be highly specific
     and encouraging, not generic. For example, instead of "Lacks cloud experience,"
     write something like "You haven't listed any cloud platform experience (AWS,
-    Azure, GCP) — that's worth adding if you've touched any of them, even briefly."
+    Azure, GCP) — that's worth adding if you've touched any of them, even briefly.
+    Give your analysis based on the current hiring trends and the skills employers are
+    look for that specific job title right now."
 
     Evaluate:
     - Overall strength of the resume for this specific role (score 0-100)
     - Key strengths relevant to the role
     - Skill or experience gaps relative to a typical "{job_title}" job posting
     - Specific, actionable suggestions to improve the resume for this role
+    - Give a summary of the analysis
     """
  
    

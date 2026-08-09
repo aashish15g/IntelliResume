@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_bcrypt import Bcrypt
@@ -25,15 +25,17 @@ def create_app():
     def load_user(id):
         return User.query.get(id)
     
+    @loginManager.unauthorized_handler
+    def unauthorized():
+        return jsonify({'success': False, 'message': 'Please log in first'})
+    
 
     bcrypt = Bcrypt(app)
         
 
     from routes import register_routes
-
     register_routes(app,db,bcrypt)
 
-    #add imports later
 
     migrate = Migrate(app,db)
 

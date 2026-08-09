@@ -146,6 +146,41 @@ def register_routes(app,db,bcrypt):
         },
     })
 
+    @app.route('/analysis/<int:analysis_id>/ask', methods=['POST'])
+    @login_required
+    def ask_analysis(analysis_id):
+        analysis = Analysis.query.get(analysis_id)
+
+        if not analysis or analysis.user_id != current_user.id:
+            return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
+
+        data = request.get_json(silent =True) or {}
+        question = data.get('question')
+
+        if not question or not question.strip():
+            return jsonify({'success': False, 'message': 'Please enter a question.'}), 400
+
+        message_history = analysis.messages
+
+        answer = user_followup(
+            analysis.resume_text,
+            analysis.job_title,
+            message_history,
+            question,
+        )
+
+        db.session.add(Message(analysis_id=analysis.id, role='user', content=question))
+        db.session.add(Message(analysis_id=analysis.id, role='model', content=answer))
+        db.session.commit()
+ 
+        return jsonify({'success': True, 'answer': answer})
+
+
+
+
+        
+
+
    
    
    

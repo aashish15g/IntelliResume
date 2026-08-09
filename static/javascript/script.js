@@ -22,6 +22,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const strengthsList = document.getElementById("strengthsList");
   const skillGapsList = document.getElementById("skillGapsList");
   const suggestionsList = document.getElementById("suggestionsList");
+  const chatMessages = document.getElementById("chatMessages");
+  const chatInput = document.getElementById("chatInput");
+  const chatSendBtn = document.getElementById("chatSendBtn");
 
   const sidebar = document.getElementById("sidebar");
   const chatsBtn = document.getElementById("chatsBtn");
@@ -38,6 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedFile = null;
   let chatsOpen = false;
   let loaderInterval;
+  let currentAnalysisId = null;
 
   function startAnalysisAnimation() {
     const steps = document.querySelectorAll(".analysis-step");
@@ -139,6 +143,8 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
         renderResults(data.feedback, false);
+        currentAnalysisId = data.analysis_id;
+        renderMessages(data.messages);
 
         document.querySelectorAll(".chat-item").forEach((el) => {
           el.classList.toggle(
@@ -168,6 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
     openLoginLink.style.display = isLoggedIn ? "none" : "";
     openSignupLink.style.display = isLoggedIn ? "none" : "";
     logoutBtn.style.display = isLoggedIn ? "" : "none";
+    setSidebarOpen(isLoggedIn);
   }
 
   fetch("/me")
@@ -247,11 +254,15 @@ document.addEventListener("DOMContentLoaded", () => {
   /* Sidebar                                                              */
   /* ------------------------------------------------------------------ */
 
-  chatsBtn.addEventListener("click", () => {
-    chatsOpen = !chatsOpen;
+  function setSidebarOpen(isOpen) {
+    chatsOpen = isOpen;
     sidebarBody.classList.toggle("show", chatsOpen);
     sidebar.classList.toggle("collapsed", !chatsOpen);
     chatsBtn.classList.toggle("active", chatsOpen);
+  }
+
+  chatsBtn.addEventListener("click", () => {
+    setSidebarOpen(!chatsOpen);
   });
 
   newChatBtn.addEventListener("click", () => {
@@ -476,11 +487,78 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Follow-up chat                                                       */
+  /* ------------------------------------------------------------------ */
+
+  function appendChatMessage(role, content) {
+    const msg = document.createElement("div");
+    msg.className = `chat-message ${role}`;
+    msg.textContent = content;
+    chatMessages.appendChild(msg);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return msg;
+  }
+
+  function renderMessages(messages) {
+    chatMessages.innerHTML = "";
+    (messages || []).forEach((m) => appendChatMessage(m.role, m.content));
+  }
+
+  function sendChatMessage() {
+    const question = chatInput.value.trim();
+    if (!question || !currentAnalysisId) return;
+
+    appendChatMessage("user", question);
+    chatInput.value = "";
+    chatInput.disabled = true;
+    chatSendBtn.disabled = true;
+
+    fetch(`/analysis/${currentAnalysisId}/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    })
+      .then((r) => r.json())
+      .then(async (data) => {
+        chatInput.disabled = false;
+        chatSendBtn.disabled = false;
+        chatInput.focus();
+
+        if (data.success) {
+          const bubble = appendChatMessage("model", "");
+          await typeText(bubble, data.answer, 8);
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        } else {
+          appendChatMessage("model", data.message || "Something went wrong.");
+        }
+      })
+      .catch(() => {
+        chatInput.disabled = false;
+        chatSendBtn.disabled = false;
+        appendChatMessage("model", "Something went wrong. Try again.");
+      });
+  }
+
+  chatSendBtn.addEventListener("click", sendChatMessage);
+
+  chatInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
+  /* ------------------------------------------------------------------ */
   /* Analyze action                                                       */
   /* ------------------------------------------------------------------ */
 
   analyzeBtn.addEventListener("click", () => {
     if (!selectedFile || !jobInput.value.trim()) return;
+
+    // Clear any previous analysis's chat immediately — it shouldn't
+    // linger on screen while the new analysis is still loading.
+    currentAnalysisId = null;
+    chatMessages.innerHTML = "";
 
     loader.classList.add("show");
     startAnalysisAnimation();
@@ -506,6 +584,8 @@ document.addEventListener("DOMContentLoaded", () => {
           analyzeBtn.textContent = "Analyze ↗";
 
           await renderResults(data.feedback);
+          currentAnalysisId = data.analysis_id;
+          renderMessages([]);
           loadHistory();
         } else {
           clearInterval(loaderInterval);
