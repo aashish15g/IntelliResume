@@ -490,10 +490,40 @@ document.addEventListener("DOMContentLoaded", () => {
   /* Follow-up chat                                                       */
   /* ------------------------------------------------------------------ */
 
-  function appendChatMessage(role, content) {
+  // Renders full markdown (bold, lists, etc.) via marked.js. When
+  // animate is true, each paragraph/list item/heading fades in as a
+  // whole unit, staggered slightly — not word-by-word, since animating
+  // individual words breaks apart from native list markers (the "1."
+  // or "•" is part of the <li> itself, not something we control), which
+  // looked like markers popping in before their text.
+  function renderFormattedText(el, text, animate = false) {
+    el.innerHTML = marked.parse(text);
+    if (animate) revealBlocks(el);
+  }
+
+  function revealBlocks(container) {
+    const delayStep = 90; // ms between each block starting to appear
+    const blocks = container.querySelectorAll(
+      "p, li, h1, h2, h3, h4, blockquote, hr",
+    );
+
+    if (blocks.length === 0) {
+      // Plain text with no block-level markdown elements at all —
+      // just animate the whole container as one unit.
+      container.classList.add("reveal-block");
+      return;
+    }
+
+    blocks.forEach((block, i) => {
+      block.classList.add("reveal-block");
+      block.style.animationDelay = `${i * delayStep}ms`;
+    });
+  }
+
+  function appendChatMessage(role, content, animate = false) {
     const msg = document.createElement("div");
     msg.className = `chat-message ${role}`;
-    msg.textContent = content;
+    renderFormattedText(msg, content, animate);
     chatMessages.appendChild(msg);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return msg;
@@ -501,14 +531,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderMessages(messages) {
     chatMessages.innerHTML = "";
-    (messages || []).forEach((m) => appendChatMessage(m.role, m.content));
+    (messages || []).forEach((m) =>
+      appendChatMessage(m.role, m.content, false),
+    );
   }
 
   function sendChatMessage() {
     const question = chatInput.value.trim();
     if (!question || !currentAnalysisId) return;
 
-    appendChatMessage("user", question);
+    appendChatMessage("user", question, false);
     chatInput.value = "";
     chatInput.disabled = true;
     chatSendBtn.disabled = true;
@@ -519,23 +551,25 @@ document.addEventListener("DOMContentLoaded", () => {
       body: JSON.stringify({ question }),
     })
       .then((r) => r.json())
-      .then(async (data) => {
+      .then((data) => {
         chatInput.disabled = false;
         chatSendBtn.disabled = false;
         chatInput.focus();
 
         if (data.success) {
-          const bubble = appendChatMessage("model", "");
-          await typeText(bubble, data.answer, 8);
-          chatMessages.scrollTop = chatMessages.scrollHeight;
+          appendChatMessage("model", data.answer, true);
         } else {
-          appendChatMessage("model", data.message || "Something went wrong.");
+          appendChatMessage(
+            "model",
+            data.message || "Something went wrong.",
+            false,
+          );
         }
       })
       .catch(() => {
         chatInput.disabled = false;
         chatSendBtn.disabled = false;
-        appendChatMessage("model", "Something went wrong. Try again.");
+        appendChatMessage("model", "Something went wrong. Try again.", false);
       });
   }
 

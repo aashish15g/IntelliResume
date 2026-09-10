@@ -1207,3 +1207,176 @@ footer span {
   color: var(--text-muted);
   cursor: not-allowed;
 }
+
+/* Claude-style phased reveal for new chat responses — whole
+   paragraphs/list items/headings fade in as units, staggered, rather
+   than word-by-word (which desynced from native list markers). */
+.reveal-block {
+  opacity: 0;
+  animation: block-in 0.4s ease forwards;
+}
+
+@keyframes block-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Markdown content rendered inside chat bubbles via marked.js needs its
+   own spacing rules, since the global * { margin:0; padding:0 } reset
+   strips the default indentation lists/headings normally rely on. */
+
+.chat-message p {
+  margin: 0 0 10px;
+}
+
+.chat-message p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-message ul,
+.chat-message ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.chat-message li {
+  margin-bottom: 4px;
+}
+
+.chat-message h1,
+.chat-message h2,
+.chat-message h3,
+.chat-message h4 {
+  margin: 14px 0 6px;
+  font-size: 1em;
+  font-weight: 700;
+}
+
+.chat-message h1:first-child,
+.chat-message h2:first-child,
+.chat-message h3:first-child,
+.chat-message h4:first-child {
+  margin-top: 0;
+}
+
+.chat-message strong {
+  font-weight: 700;
+}
+
+.chat-message code {
+  padding: 2px 5px;
+  background: var(--bg);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+.chat-message hr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.chat-message blockquote {
+  margin: 8px 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--text-secondary);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
