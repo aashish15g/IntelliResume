@@ -123,16 +123,12 @@ def register_routes(app,db,bcrypt):
             ],
         })
 
-
     @app.route('/analysis/<int:analysis_id>')
     @login_required
     def get_analysis(analysis_id):
         analysis = Analysis.query.get(analysis_id)
 
-        if not analysis:
-            return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
-
-        if analysis.user_id != current_user.id:
+        if not analysis or analysis.user_id != current_user.id:
             return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
 
         return jsonify({
@@ -143,8 +139,12 @@ def register_routes(app,db,bcrypt):
             'strengths': analysis.strengths,
             'skill_gaps': analysis.skill_gaps,
             'suggestions': analysis.suggestions,
-        },
-    })
+            },
+            'messages': [
+            {'role': m.role, 'content': m.content}
+            for m in analysis.messages
+            ],
+        })
 
     @app.route('/analysis/<int:analysis_id>/ask', methods=['POST'])
     @login_required

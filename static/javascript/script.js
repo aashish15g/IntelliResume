@@ -525,7 +525,23 @@ document.addEventListener("DOMContentLoaded", () => {
     msg.className = `chat-message ${role}`;
     renderFormattedText(msg, content, animate);
     chatMessages.appendChild(msg);
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    if (animate) {
+      // A new response is about to phase in — scroll so its START is
+      // visible. We calculate this manually instead of using
+      // scrollIntoView(), because scrollIntoView() scrolls EVERY
+      // scrollable ancestor needed to bring the element into view —
+      // which included the outer page here, not just this chat box.
+      const chatRect = chatMessages.getBoundingClientRect();
+      const msgRect = msg.getBoundingClientRect();
+      const scrollOffset = msgRect.top - chatRect.top + chatMessages.scrollTop;
+      chatMessages.scrollTo({ top: scrollOffset, behavior: "smooth" });
+    } else {
+      // Sending your own message, or restoring history — keep the
+      // usual "scroll to latest" behavior.
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
     return msg;
   }
 
