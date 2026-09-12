@@ -2,7 +2,7 @@ from flask import render_template, request, redirect,url_for, jsonify
 from models import  User, Analysis, Message
 from flask_login import login_user, logout_user, current_user, login_required
 import re
-from services.resume_parser import extract_text,clean_text
+from services.resume_parser import ResumeExtractor
 from services.gemini_service import get_resume_feedback, user_followup
 
 def register_routes(app,db,bcrypt):
@@ -77,8 +77,8 @@ def register_routes(app,db,bcrypt):
         if not file or not job_title:
             return jsonify({'success': False, 'message': 'Missing file or job title.'}), 400
         
-        resume_extract = extract_text(file)
-        cleaned_resume = clean_text(resume_extract)
+        resume_extract = ResumeExtractor(file)
+        cleaned_resume = resume_extract.process()
 
         feedback = get_resume_feedback(cleaned_resume, job_title)
 

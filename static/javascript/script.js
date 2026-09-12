@@ -189,6 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.success) {
           updateAuthUI(false);
           loadHistory();
+          resetWorkspace();
         }
       })
       .catch((error) => console.error("Logout failed:", error));
@@ -265,17 +266,23 @@ document.addEventListener("DOMContentLoaded", () => {
     setSidebarOpen(!chatsOpen);
   });
 
-  newChatBtn.addEventListener("click", () => {
+  function resetWorkspace() {
     clearFile();
     jobInput.value = "";
     updateAnalyzeButton();
     loader.classList.remove("show");
     analyzeBtn.textContent = "Analyze ↗";
     results.classList.remove("show");
+    chatMessages.innerHTML = "";
+    currentAnalysisId = null;
 
     document
       .querySelectorAll(".chat-item")
       .forEach((el) => el.classList.remove("active-chat"));
+  }
+
+  newChatBtn.addEventListener("click", () => {
+    resetWorkspace();
 
     // TODO: create a new session via Flask
   });
