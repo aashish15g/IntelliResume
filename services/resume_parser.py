@@ -1,7 +1,7 @@
 import pdfplumber
 import os
 import re
-
+from decorators import log_function_time
 class ResumeExtractor:
 
     def __init__(self,pdf_path):
@@ -29,6 +29,7 @@ class ResumeExtractor:
 
         return text.strip()
 
+    @log_function_time
     def process(self):
         self.extract_text()
         self.cleaned_text = self.clean_text(self.raw_text)
