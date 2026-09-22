@@ -23,6 +23,7 @@ class Analysis(db.Model):
     strengths = db.Column(db.JSON)
     skill_gaps = db.Column(db.JSON)
     suggestions = db.Column(db.JSON)
+    skills = db.Column(db.JSON)
  
     created_at = db.Column(db.DateTime, server_default=db.func.now())
 

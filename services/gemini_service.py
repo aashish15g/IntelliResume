@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import List
 from pydantic import ValidationError
 from pydantic import Field
+from decorators import retry
 
 
 load_dotenv()
@@ -25,6 +26,12 @@ class ResumeFeedback(BaseModel):
     strengths: List[str]
     skill_gaps: List[str]
     suggestions: List[str]
+    skills: List[str] = Field(
+        description="A clean list of the candidate's concrete skills, "
+                    "technologies, and tools mentioned in the resume — "
+                    "e.g. 'Python', 'React', 'AWS'. No soft skills, no "
+                    "full sentences, just the skill/tool names themselves."
+    )
 
 def BuildPrompt(resume_text: str, job_title: str) -> str:
     return f"""You are a supportive, experienced career coach — the kind of mentor who's
@@ -52,33 +59,30 @@ def BuildPrompt(resume_text: str, job_title: str) -> str:
     - Skill or experience gaps relative to a typical "{job_title}" job posting
     - Specific, actionable suggestions to improve the resume for this role
     - Give a summary of the analysis
+    - A clean list of the candidate's concrete technical skills/tools 
     """
  
    
-
+@retry(times=3)
 def get_resume_feedback(resume_text: str, job_title: str) -> dict:
     prompt = BuildPrompt(resume_text, job_title)
-    try:
-        response = client.models.generate_content(
-        model = 'gemini-3.1-flash-lite',
-        contents = prompt,
-        config = types.GenerateContentConfig(
-            temperature = 0,
+
+    response = client.models.generate_content(
+        model='gemini-3.1-flash-lite',
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=0,
             response_mime_type='application/json',
             response_json_schema=ResumeFeedback.model_json_schema(),
-            ),
-        )
-    except Exception as e:
-        return {"error": f"Gemini request failed: {e}"}
-    
-    try:
-        feedback = ResumeFeedback.model_validate_json(response.text)
+        ),
+    )
 
-    except ValidationError as e:
-        return {'error': f'The response was not in the proper format: {e}'}
-    
+    feedback = ResumeFeedback.model_validate_json(response.text)
     return feedback.model_dump()
 
+
+
+@retry(times = 3)
 def user_followup(resume_text: str, job_title: str, message_history: list, question: str) -> str:
     chat = client.chats.create(
         model='gemini-3.5-flash',
@@ -98,16 +102,9 @@ def user_followup(resume_text: str, job_title: str, message_history: list, quest
             for m in message_history
         ],
     )
- 
-    try:
-        response = chat.send_message(question)
-        return response.text
-    except Exception as e:
-        return f"Sorry, I couldn't process that question: {e}"
+    response = chat.send_message(question)
+    return response.text
     
-
-
-
 
 if __name__ == "__main__":
     # Quick manual test — run this file directly to check the pipeline

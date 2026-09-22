@@ -92,7 +92,8 @@ def register_routes(app,db,bcrypt):
             score = feedback['score'],
             strengths = feedback['strengths'],
             skill_gaps = feedback['skill_gaps'],
-            suggestions = feedback['suggestions']
+            suggestions = feedback['suggestions'],
+            skills=feedback['skills']
         )
 
         db.session.add(analysis)
@@ -168,6 +169,10 @@ def register_routes(app,db,bcrypt):
             message_history,
             question,
         )
+
+        if isinstance(answer, dict) and "error" in answer:
+            return jsonify({'success':False,'message': answer['error']}), 502
+
 
         db.session.add(Message(analysis_id=analysis.id, role='user', content=question))
         db.session.add(Message(analysis_id=analysis.id, role='model', content=answer))

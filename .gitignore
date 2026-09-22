@@ -24,3 +24,7 @@ Thumbs.db
 # Uploaded files (if you save resumes to disk anywhere during testing)
 uploads/
 *.pdf
+
+# Logs
+logs/
+*.log
