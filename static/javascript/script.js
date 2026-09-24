@@ -25,6 +25,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const chatMessages = document.getElementById("chatMessages");
   const chatInput = document.getElementById("chatInput");
   const chatSendBtn = document.getElementById("chatSendBtn");
+  const jobLocationInput = document.getElementById("jobLocationInput");
+  const jobSearchBtn = document.getElementById("jobSearchBtn");
+  const jobSearchStatus = document.getElementById("jobSearchStatus");
+  const jobResults = document.getElementById("jobResults");
 
   const sidebar = document.getElementById("sidebar");
   const chatsBtn = document.getElementById("chatsBtn");
@@ -145,6 +149,12 @@ document.addEventListener("DOMContentLoaded", () => {
         renderResults(data.feedback, false);
         currentAnalysisId = data.analysis_id;
         renderMessages(data.messages);
+
+        // Job results are never persisted — start fresh each time a
+        // past analysis is reopened, ready for a new search.
+        jobResults.innerHTML = "";
+        jobSearchStatus.textContent = "";
+        jobLocationInput.value = "";
 
         document.querySelectorAll(".chat-item").forEach((el) => {
           el.classList.toggle(
@@ -275,6 +285,9 @@ document.addEventListener("DOMContentLoaded", () => {
     results.classList.remove("show");
     chatMessages.innerHTML = "";
     currentAnalysisId = null;
+    jobResults.innerHTML = "";
+    jobSearchStatus.textContent = "";
+    jobLocationInput.value = "";
 
     document
       .querySelectorAll(".chat-item")
@@ -606,16 +619,123 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   /* ------------------------------------------------------------------ */
+  /* Job search                                                           */
+  /* ------------------------------------------------------------------ */
+
+  function formatSalary(min, max) {
+    if (!min && !max) return null;
+    const fmt = (n) => `$${Math.round(n / 1000)}k`;
+    if (min && max && min !== max) return `${fmt(min)} - ${fmt(max)}`;
+    return fmt(min || max);
+  }
+
+  function renderSkillTags(skills, emptyLabel) {
+    if (!skills || skills.length === 0) {
+      return `<span class="job-skill-tag none">${emptyLabel}</span>`;
+    }
+    return skills
+      .map((s) => `<span class="job-skill-tag">${s}</span>`)
+      .join("");
+  }
+
+  function renderJobs(jobs) {
+    jobResults.innerHTML = "";
+
+    if (!jobs || jobs.length === 0) {
+      jobResults.innerHTML = `<div class="job-empty-state">No matching jobs found. Try a different location.</div>`;
+      return;
+    }
+
+    jobs.forEach((job) => {
+      const card = document.createElement("div");
+      card.className = "job-card";
+
+      const salary = formatSalary(job.salary_min, job.salary_max);
+      const metaParts = [job.company, job.location, salary].filter(Boolean);
+
+      card.innerHTML = `
+        <div class="job-card-header">
+          <div>
+            <h4 class="job-title">${job.title || "Untitled role"}</h4>
+            <p class="job-meta">${metaParts.join(" · ")}</p>
+          </div>
+          <div class="job-match-badge">${job.match_score}%</div>
+        </div>
+        <div class="job-skills">
+          <div>
+            <span class="job-skills-label matched">You have</span>
+            <div class="job-skill-tags">${renderSkillTags(job.matched_skills, "None detected")}</div>
+          </div>
+          <div>
+            <span class="job-skills-label missing">Missing</span>
+            <div class="job-skill-tags">${renderSkillTags(job.missing_skills, "Nothing specific")}</div>
+          </div>
+        </div>
+        ${job.url ? `<a class="job-apply-link" href="${job.url}" target="_blank" rel="noopener">View posting →</a>` : ""}
+      `;
+
+      jobResults.appendChild(card);
+    });
+  }
+
+  function searchJobs() {
+    if (!currentAnalysisId) return;
+
+    const location = jobLocationInput.value.trim();
+
+    jobSearchBtn.disabled = true;
+    jobSearchStatus.textContent = "Searching...";
+    jobResults.innerHTML = "";
+
+    fetch(`/analysis/${currentAnalysisId}/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ location }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        jobSearchBtn.disabled = false;
+
+        if (data.success) {
+          jobSearchStatus.textContent = data.jobs.length
+            ? `Found ${data.jobs.length} matching jobs`
+            : "";
+          renderJobs(data.jobs);
+        } else {
+          jobSearchStatus.textContent = "";
+          jobResults.innerHTML = `<div class="job-empty-state">${data.message || "Something went wrong."}</div>`;
+        }
+      })
+      .catch(() => {
+        jobSearchBtn.disabled = false;
+        jobSearchStatus.textContent = "";
+        jobResults.innerHTML = `<div class="job-empty-state">Something went wrong. Try again.</div>`;
+      });
+  }
+
+  jobSearchBtn.addEventListener("click", searchJobs);
+
+  jobLocationInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      searchJobs();
+    }
+  });
+
+  /* ------------------------------------------------------------------ */
   /* Analyze action                                                       */
   /* ------------------------------------------------------------------ */
 
   analyzeBtn.addEventListener("click", () => {
     if (!selectedFile || !jobInput.value.trim()) return;
 
-    // Clear any previous analysis's chat immediately — it shouldn't
-    // linger on screen while the new analysis is still loading.
+    // Clear any previous analysis's chat and job results immediately —
+    // they shouldn't linger on screen while the new analysis loads.
     currentAnalysisId = null;
     chatMessages.innerHTML = "";
+    jobResults.innerHTML = "";
+    jobSearchStatus.textContent = "";
+    jobLocationInput.value = "";
 
     loader.classList.add("show");
     startAnalysisAnimation();

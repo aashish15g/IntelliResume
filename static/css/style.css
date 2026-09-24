@@ -1290,6 +1290,204 @@ footer span {
   color: var(--text-secondary);
 }
 
+/* Paste this at the end of style.css, or alongside your other
+   "Results panel" / "Follow-up chat" sections. */
+
+.job-search-section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.job-search-title {
+  margin-bottom: 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.job-search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.job-location-input {
+  flex: 1;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.job-location-input::placeholder {
+  color: var(--text-muted);
+}
+
+.job-location-input:focus {
+  border-color: var(--accent);
+}
+
+.job-search-btn {
+  padding: 12px 20px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.job-search-btn:hover {
+  background: var(--accent-hover);
+}
+
+.job-search-btn:disabled {
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.job-search-status {
+  min-height: 1.2em;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.job-results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.job-card {
+  padding: 18px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.job-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.job-title {
+  margin-bottom: 4px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.job-meta {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.job-match-badge {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.job-skills {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.job-skills-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.job-skills-label.matched {
+  color: var(--success);
+}
+
+.job-skills-label.missing {
+  color: var(--danger);
+}
+
+.job-skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.job-skill-tag {
+  padding: 3px 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.job-skill-tag.none {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.job-apply-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.job-apply-link:hover {
+  text-decoration: underline;
+}
+
+.job-empty-state {
+  padding: 20px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .job-search-row {
+    flex-direction: column;
+  }
+
+  .job-skills {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 
 

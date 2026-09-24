@@ -4,6 +4,7 @@ from flask_login import login_user, logout_user, current_user, login_required
 import re
 from services.resume_parser import ResumeExtractor
 from services.gemini_service import get_resume_feedback, user_followup
+from services.job_matcher import search_jobs, rank_jobs_hybrid
 
 def register_routes(app,db,bcrypt):
 
@@ -180,36 +181,22 @@ def register_routes(app,db,bcrypt):
  
         return jsonify({'success': True, 'answer': answer})
 
+    @app.route('/analysis/<int:analysis_id>/jobs', methods=['POST'])
+    @login_required
+    def search_analysis_jobs(analysis_id):
+        analysis = Analysis.query.get(analysis_id)
 
+        if not analysis or analysis.user_id != current_user.id:
+            return jsonify({'success': False, 'message': 'Analysis not found.'}), 404
 
+        data = request.get_json(silent=True) or {}
+        location = data.get('location', '')
 
-        
+        jobs = search_jobs(analysis.job_title, location=location)
 
+        if not jobs:
+            return jsonify({'success': True, 'jobs': []})
 
-   
-   
-   
+        ranked_jobs = rank_jobs_hybrid(analysis.skills or [], jobs)
 
-   
- 
-   
-   
- 
-   
-   
-   
-   
- 
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-
-   
+        return jsonify({'success': True, 'jobs': ranked_jobs})
