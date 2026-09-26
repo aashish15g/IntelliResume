@@ -1,4 +1,6 @@
 import pdfplumber
+from pdfminer.pdfdocument import PDFException
+from pdfplumber.utils.exceptions import PdfminerException
 import os
 import re
 from decorators import log_function_time
@@ -11,12 +13,15 @@ class ResumeExtractor:
 
 
     def extract_text(self):
-        with pdfplumber.open(self.pdf_path) as pdf:
-            text = ''
-            for page in pdf.pages:
-                text += (page.extract_text() or "") + "\n" 
-            self.raw_text = text
-            return self.raw_text
+        try:
+            with pdfplumber.open(self.pdf_path) as pdf:
+                text = ''
+                for page in pdf.pages:
+                    text += (page.extract_text() or "") + "\n"
+                self.raw_text = text
+                return self.raw_text
+        except (PdfminerException, PDFException, ValueError, TypeError) as exc:
+            raise ValueError('Could not read this PDF. Please upload a valid, unprotected PDF.') from exc
 
     @staticmethod
     def clean_text(raw_text):

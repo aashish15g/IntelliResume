@@ -8,6 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
   /* Elements                                                            */
   /* ------------------------------------------------------------------ */
   const fileInput = document.getElementById("fileInput");
+  const uploadError = document.getElementById("uploadError");
+  const maxResumeBytes = 10 * 1024 * 1024;
   const dropZone = document.getElementById("dropZone");
   const fileChosen = document.getElementById("fileChosen");
   const fileName = document.getElementById("fileName");
@@ -214,6 +216,20 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function showFile(file) {
+    selectedFile = null;
+    updateAnalyzeButton();
+    uploadError.textContent = "";
+    if (
+      !file.name.toLowerCase().endsWith(".pdf") ||
+      (file.type && file.type !== "application/pdf")
+    ) {
+      uploadError.textContent = "Please upload a PDF file.";
+      return;
+    }
+    if (file.size > maxResumeBytes) {
+      uploadError.textContent = "PDF must be 10 MB or smaller.";
+      return;
+    }
     selectedFile = file;
     fileName.textContent = file.name;
     dropZone.style.display = "none";
@@ -223,6 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function clearFile() {
+    uploadError.textContent = "";
     selectedFile = null;
     fileInput.value = "";
     dropZone.style.display = "";
@@ -250,7 +267,7 @@ document.addEventListener("DOMContentLoaded", () => {
     e.preventDefault();
     dropZone.classList.remove("dragover");
     const file = e.dataTransfer.files[0];
-    if (file && file.type === "application/pdf") showFile(file);
+    if (file) showFile(file);
   });
 
   jobInput.addEventListener("input", updateAnalyzeButton);
@@ -490,7 +507,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!animate) {
       // Reopening a past analysis — show it instantly, no typewriter.
       scoreValue.textContent = feedback.score ?? 0;
-      resultsSummary.textContent = feedback.summary ?? "";
+      resultsSummary.textContent =
+        feedback.summary ??
+        "Summary unavailable for analyses saved before this update.";
       renderListInstant(strengthsList, feedback.strengths);
       renderListInstant(skillGapsList, feedback.skill_gaps);
       renderListInstant(suggestionsList, feedback.suggestions);
@@ -728,6 +747,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   analyzeBtn.addEventListener("click", () => {
     if (!selectedFile || !jobInput.value.trim()) return;
+    uploadError.textContent = "";
 
     // Clear any previous analysis's chat and job results immediately —
     // they shouldn't linger on screen while the new analysis loads.
@@ -772,7 +792,8 @@ document.addEventListener("DOMContentLoaded", () => {
           analyzeBtn.textContent = "Analyze ↗";
 
           console.error("Analysis failed:", data.message);
-          // TODO: show data.message somewhere visible to the user
+          uploadError.textContent =
+            data.message || "Analysis failed. Please try again.";
         }
       })
       .catch((error) => {
@@ -782,6 +803,7 @@ document.addEventListener("DOMContentLoaded", () => {
         analyzeBtn.disabled = false;
         analyzeBtn.textContent = "Analyze ↗";
         console.error("Error:", error);
+        uploadError.textContent = "Analysis failed. Please try again.";
       });
   });
 });

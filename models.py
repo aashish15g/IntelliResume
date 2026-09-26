@@ -20,6 +20,7 @@ class Analysis(db.Model):
     resume_text = db.Column(db.Text, nullable=False)
  
     score = db.Column(db.Integer)
+    summary = db.Column(db.Text)
     strengths = db.Column(db.JSON)
     skill_gaps = db.Column(db.JSON)
     suggestions = db.Column(db.JSON)

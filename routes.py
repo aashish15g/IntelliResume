@@ -7,6 +7,7 @@ from services.gemini_service import get_resume_feedback, user_followup
 from services.job_matcher import search_jobs, rank_jobs_hybrid
 
 def register_routes(app,db,bcrypt):
+    max_resume_bytes = 10 * 1024 * 1024
 
     @app.route('/')
     def index():
@@ -75,11 +76,28 @@ def register_routes(app,db,bcrypt):
         file = request.files.get('file')
         job_title = request.form.get("job_title")
 
-        if not file or not job_title:
+        if not file or not job_title or not job_title.strip():
             return jsonify({'success': False, 'message': 'Missing file or job title.'}), 400
-        
-        resume_extract = ResumeExtractor(file)
-        cleaned_resume = resume_extract.process()
+
+        if not file.filename or not file.filename.lower().endswith('.pdf'):
+            return jsonify({'success': False, 'message': 'Please upload a PDF file.'}), 400
+
+        file.stream.seek(0, 2)
+        file_size = file.stream.tell()
+        file.stream.seek(0)
+        if file_size > max_resume_bytes:
+            return jsonify({'success': False, 'message': 'PDF must be 10 MB or smaller.'}), 413
+        if file.stream.read(5) != b'%PDF-':
+            return jsonify({'success': False, 'message': 'This file is not a valid PDF.'}), 400
+        file.stream.seek(0)
+
+        try:
+            cleaned_resume = ResumeExtractor(file).process()
+        except (ValueError, OSError) as exc:
+            return jsonify({'success': False, 'message': str(exc)}), 400
+
+        if len(re.findall(r'[A-Za-z0-9]', cleaned_resume)) < 50:
+            return jsonify({'success': False, 'message': 'No usable text found in this PDF. Please upload a text-based PDF; scanned pages need OCR first.'}), 400
 
         feedback = get_resume_feedback(cleaned_resume, job_title)
 
@@ -91,6 +109,7 @@ def register_routes(app,db,bcrypt):
             job_title = job_title,
             resume_text = cleaned_resume,
             score = feedback['score'],
+            summary = feedback['summary'],
             strengths = feedback['strengths'],
             skill_gaps = feedback['skill_gaps'],
             suggestions = feedback['suggestions'],
@@ -138,6 +157,7 @@ def register_routes(app,db,bcrypt):
             'analysis_id': analysis.id,
             'feedback': {
             'score': analysis.score,
+            'summary': analysis.summary,
             'strengths': analysis.strengths,
             'skill_gaps': analysis.skill_gaps,
             'suggestions': analysis.suggestions,

@@ -13,6 +13,11 @@ db = SQLAlchemy()
 def create_app():
     app = Flask(__name__, template_folder= 'templates', static_folder= 'static')
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///./users.db'
+    app.config['MAX_CONTENT_LENGTH'] = 11 * 1024 * 1024  # Multipart overhead above the 10 MB PDF limit.
+
+    @app.errorhandler(413)
+    def upload_too_large(error):
+        return jsonify({'success': False, 'message': 'PDF must be 10 MB or smaller.'}), 413
 
     app.secret_key = os.environ.get('SECRET_KEY')
     db.init_app(app)
