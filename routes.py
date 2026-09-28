@@ -4,7 +4,7 @@ from flask_login import login_user, logout_user, current_user, login_required
 import re
 from services.resume_parser import ResumeExtractor
 from services.gemini_service import get_resume_feedback, user_followup
-from services.job_matcher import search_jobs, rank_jobs_hybrid
+from services.job_matcher import search_jobs, rank_jobs_hybrid, JobSearchError
 
 def register_routes(app,db,bcrypt):
     max_resume_bytes = 10 * 1024 * 1024
@@ -211,12 +211,19 @@ def register_routes(app,db,bcrypt):
 
         data = request.get_json(silent=True) or {}
         location = data.get('location', '')
+        page = data.get('page', 1)
+        if isinstance(page, bool) or not isinstance(page, int) or not 1 <= page <= 100:
+            return jsonify({'success': False, 'message': 'Invalid results page.'}), 400
 
-        jobs = search_jobs(analysis.job_title, location=location)
+        try:
+            search_result = search_jobs(analysis.job_title, location=location, page=page)
+        except JobSearchError as exc:
+            return jsonify({'success': False, 'message': str(exc)}), 502
 
+        jobs = search_result['jobs']
         if not jobs:
-            return jsonify({'success': True, 'jobs': []})
+            return jsonify({'success': True, 'jobs': [], 'has_more': False})
 
         ranked_jobs = rank_jobs_hybrid(analysis.skills or [], jobs)
 
-        return jsonify({'success': True, 'jobs': ranked_jobs})
+        return jsonify({'success': True, 'jobs': ranked_jobs, 'has_more': search_result['has_more'] and page < 100})

@@ -1373,6 +1373,15 @@ footer span {
   gap: 14px;
 }
 
+.job-load-more {
+  display: block;
+  margin: 16px auto 0;
+}
+
+.job-load-more[hidden] {
+  display: none;
+}
+
 .job-card {
   padding: 18px;
   background: var(--bg);
@@ -1487,82 +1496,6 @@ footer span {
     grid-template-columns: 1fr;
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

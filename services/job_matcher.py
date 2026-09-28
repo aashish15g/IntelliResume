@@ -10,6 +10,7 @@ which skills matched and which are missing per job).
 import os
 import re
 import requests
+import logging
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import numpy as np
@@ -21,14 +22,20 @@ load_dotenv()
 ADZUNA_APP_ID = os.environ.get("ADZUNA_APP_ID")
 ADZUNA_API_KEY = os.environ.get("ADZUNA_API_KEY")
 ADZUNA_COUNTRY = "us"
-ADZUNA_BASE_URL = f"https://api.adzuna.com/v1/api/jobs/{ADZUNA_COUNTRY}/search/1"
+ADZUNA_BASE_URL = f"https://api.adzuna.com/v1/api/jobs/{ADZUNA_COUNTRY}/search"
 
 # Pre-normalize the keyword list once, at import time, rather than
 # re-normalizing it on every single job comparison.
 _NORMALIZED_KEYWORDS = {normalize_skill(kw): kw for kw in TECH_KEYWORDS}
 
+logger = logging.getLogger(__name__)
 
-def search_jobs(job_title: str, location: str = "", results_count: int = 5) -> list:
+
+class JobSearchError(Exception):
+    """The job provider could not return a usable search result."""
+
+
+def search_jobs(job_title: str, location: str = "", results_count: int = 5, page: int = 1) -> dict:
     params = {
         "app_id": ADZUNA_APP_ID,
         "app_key": ADZUNA_API_KEY,
@@ -39,16 +46,18 @@ def search_jobs(job_title: str, location: str = "", results_count: int = 5) -> l
     }
 
     try:
-        response = requests.get(ADZUNA_BASE_URL, params=params, timeout=10)
+        response = requests.get(f"{ADZUNA_BASE_URL}/{page}", params=params, timeout=10)
         response.raise_for_status()
-    except requests.RequestException as e:
-        print(f"Adzuna request failed: {e}")
-        return []
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        logger.warning('Adzuna search failed (%s)', type(exc).__name__)
+        raise JobSearchError('Job search is temporarily unavailable. Please try again later.') from exc
 
-    data = response.json()
+    if not isinstance(data, dict) or not isinstance(data.get('results'), list):
+        raise JobSearchError('Job search is temporarily unavailable. Please try again later.')
 
     jobs = []
-    for job in data.get("results", []):
+    for job in data["results"]:
         jobs.append({
             "title": job.get("title"),
             "company": job.get("company", {}).get("display_name"),
@@ -59,7 +68,9 @@ def search_jobs(job_title: str, location: str = "", results_count: int = 5) -> l
             "url": job.get("redirect_url"),
         })
 
-    return jobs
+    total = data.get('count')
+    has_more = page * results_count < total if isinstance(total, int) and total >= 0 else len(jobs) == results_count
+    return {'jobs': jobs, 'has_more': has_more}
 
 
 def extract_skills_from_text(text: str) -> set:
@@ -191,5 +202,5 @@ if __name__ == "__main__":
     import json
     fake_skills = ["C++", "Linux", "Embedded Systems", "C", "System Design"]
     results = search_jobs("Software Engineer", location="Virginia")
-    ranked = rank_jobs_hybrid(fake_skills, results)
+    ranked = rank_jobs_hybrid(fake_skills, results['jobs'])
     print(json.dumps(ranked, indent=2))

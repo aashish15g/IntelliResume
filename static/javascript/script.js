@@ -31,6 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const jobSearchBtn = document.getElementById("jobSearchBtn");
   const jobSearchStatus = document.getElementById("jobSearchStatus");
   const jobResults = document.getElementById("jobResults");
+  const jobLoadMoreBtn = document.getElementById("jobLoadMoreBtn");
 
   const sidebar = document.getElementById("sidebar");
   const chatsBtn = document.getElementById("chatsBtn");
@@ -48,6 +49,25 @@ document.addEventListener("DOMContentLoaded", () => {
   let chatsOpen = false;
   let loaderInterval;
   let currentAnalysisId = null;
+  let loadedJobs = [];
+  let nextJobPage = 1;
+  let activeJobLocation = "";
+  let jobRequestVersion = 0;
+  let jobPageLoading = false;
+
+  function clearJobSearch() {
+    jobRequestVersion++;
+    jobPageLoading = false;
+    loadedJobs = [];
+    nextJobPage = 1;
+    activeJobLocation = "";
+    jobResults.replaceChildren();
+    jobSearchStatus.textContent = "";
+    jobLoadMoreBtn.hidden = true;
+    jobLoadMoreBtn.disabled = false;
+    jobLoadMoreBtn.textContent = "Load more";
+    jobSearchBtn.disabled = false;
+  }
 
   function startAnalysisAnimation() {
     const steps = document.querySelectorAll(".analysis-step");
@@ -154,8 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Job results are never persisted — start fresh each time a
         // past analysis is reopened, ready for a new search.
-        jobResults.innerHTML = "";
-        jobSearchStatus.textContent = "";
+        clearJobSearch();
         jobLocationInput.value = "";
 
         document.querySelectorAll(".chat-item").forEach((el) => {
@@ -302,8 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
     results.classList.remove("show");
     chatMessages.innerHTML = "";
     currentAnalysisId = null;
-    jobResults.innerHTML = "";
-    jobSearchStatus.textContent = "";
+    clearJobSearch();
     jobLocationInput.value = "";
 
     document
@@ -697,42 +715,96 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function searchJobs() {
-    if (!currentAnalysisId) return;
+  function showJobSearchError(message, retainJobs) {
+    jobSearchStatus.textContent = message;
+    if (!retainJobs) {
+      const errorState = document.createElement("div");
+      errorState.className = "job-empty-state";
+      errorState.textContent = message;
+      jobResults.replaceChildren(errorState);
+    }
+  }
 
-    const location = jobLocationInput.value.trim();
-
+  function fetchJobPage(page) {
+    if (jobPageLoading || !currentAnalysisId) return;
+    jobPageLoading = true;
+    const requestVersion = jobRequestVersion;
+    const analysisId = currentAnalysisId;
     jobSearchBtn.disabled = true;
-    jobSearchStatus.textContent = "Searching...";
-    jobResults.innerHTML = "";
+    jobLoadMoreBtn.disabled = true;
+    jobLoadMoreBtn.textContent = page === 1 ? "Load more" : "Loading…";
+    jobSearchStatus.textContent =
+      page === 1 ? "Searching..." : "Loading more jobs...";
 
-    fetch(`/analysis/${currentAnalysisId}/jobs`, {
+    fetch(`/analysis/${analysisId}/jobs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ location }),
+      body: JSON.stringify({ location: activeJobLocation, page }),
     })
       .then((r) => r.json())
       .then((data) => {
-        jobSearchBtn.disabled = false;
+        if (
+          requestVersion !== jobRequestVersion ||
+          analysisId !== currentAnalysisId
+        )
+          return;
 
         if (data.success) {
-          jobSearchStatus.textContent = data.jobs.length
-            ? `Found ${data.jobs.length} matching jobs`
+          const seen = new Set(
+            loadedJobs.map(
+              (job) => job.url || `${job.title}|${job.company}|${job.location}`,
+            ),
+          );
+          for (const job of data.jobs) {
+            const key =
+              job.url || `${job.title}|${job.company}|${job.location}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              loadedJobs.push(job);
+            }
+          }
+          loadedJobs.sort((a, b) => b.match_score - a.match_score);
+          renderJobs(loadedJobs);
+          nextJobPage = page + 1;
+          jobLoadMoreBtn.hidden = !data.has_more;
+          jobSearchStatus.textContent = loadedJobs.length
+            ? `Showing ${loadedJobs.length} jobs ranked by resume match. Results may reorder as more jobs load.`
             : "";
-          renderJobs(data.jobs);
         } else {
-          jobSearchStatus.textContent = "";
-          jobResults.innerHTML = `<div class="job-empty-state">${data.message || "Something went wrong."}</div>`;
+          showJobSearchError(data.message || "Something went wrong.", page > 1);
         }
       })
       .catch(() => {
+        if (
+          requestVersion !== jobRequestVersion ||
+          analysisId !== currentAnalysisId
+        )
+          return;
+        showJobSearchError("Something went wrong. Try again.", page > 1);
+      })
+      .finally(() => {
+        if (
+          requestVersion !== jobRequestVersion ||
+          analysisId !== currentAnalysisId
+        )
+          return;
+        jobPageLoading = false;
         jobSearchBtn.disabled = false;
-        jobSearchStatus.textContent = "";
-        jobResults.innerHTML = `<div class="job-empty-state">Something went wrong. Try again.</div>`;
+        jobLoadMoreBtn.disabled = false;
+        jobLoadMoreBtn.textContent = "Load more";
       });
   }
 
+  function searchJobs() {
+    if (!currentAnalysisId) return;
+    const location = jobLocationInput.value.trim();
+    clearJobSearch();
+    activeJobLocation = location;
+    fetchJobPage(1);
+  }
+
   jobSearchBtn.addEventListener("click", searchJobs);
+  jobLoadMoreBtn.addEventListener("click", () => fetchJobPage(nextJobPage));
 
   jobLocationInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -753,8 +825,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // they shouldn't linger on screen while the new analysis loads.
     currentAnalysisId = null;
     chatMessages.innerHTML = "";
-    jobResults.innerHTML = "";
-    jobSearchStatus.textContent = "";
+    clearJobSearch();
     jobLocationInput.value = "";
 
     loader.classList.add("show");
