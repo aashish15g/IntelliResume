@@ -81,30 +81,65 @@ def get_resume_feedback(resume_text: str, job_title: str) -> dict:
     return feedback.model_dump()
 
 
-
-@retry(times = 3)
-def user_followup(resume_text: str, job_title: str, message_history: list, question: str) -> str:
+@retry(times=3)
+def user_followup(
+    resume_text: str,
+    job_title: str,
+    message_history: list,
+    question: str,
+) -> str:
     chat = client.chats.create(
         model='gemini-3.5-flash',
-        config = types.GenerateContentConfig(
+        config=types.GenerateContentConfig(
             system_instruction=(
                 "You are a helpful, friendly resume advisor. Speak naturally, "
-                "like a knowledgeable friend giving career advice — not a form "
-                "or a report. Here is the user's resume:\n\n"
-                f"{resume_text}\n\n"
-                f"They are targeting a '{job_title}' role. Answer their questions "
-                "directly, suggest specific wording changes when asked, and "
-                "recommend skills to learn when relevant."
+                "like a knowledgeable friend giving career advice. "
+                "Answer questions directly, suggest specific wording changes "
+                "when asked, and recommend skills to learn when relevant. "
+                "Keep follow-up answers concise by default. Match the level "
+                "of detail to the question: give a short, direct answer for "
+                "simple questions, and provide a fuller explanation, examples, "
+                "or rewritten resume text when needed to answer well. "
+                "Avoid repeating the resume analysis or adding unnecessary "
+                "introductions and conclusions.\n\n"
+                f"The user is targeting a '{job_title}' role.\n\n"
+                f"Here is the user's resume:\n{resume_text}"
             ),
         ),
         history=[
-            types.Content(role=m.role, parts=[types.Part.from_text(text=m.content)])
+            types.Content(
+                role=m.role,
+                parts=[types.Part.from_text(text=m.content)],
+            )
             for m in message_history
         ],
     )
+
     response = chat.send_message(question)
     return response.text
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     # Quick manual test — run this file directly to check the pipeline

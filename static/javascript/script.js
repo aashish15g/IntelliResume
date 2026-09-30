@@ -55,6 +55,23 @@ document.addEventListener("DOMContentLoaded", () => {
   let jobRequestVersion = 0;
   let jobPageLoading = false;
 
+  function textElement(tag, className, text) {
+    const element = document.createElement(tag);
+    element.className = className;
+    element.textContent = text ?? "";
+    return element;
+  }
+
+  function safeWebUrl(value) {
+    if (typeof value !== "string") return null;
+    try {
+      const url = new URL(value);
+      return ["https:", "http:"].includes(url.protocol) ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
   function clearJobSearch() {
     jobRequestVersion++;
     jobPageLoading = false;
@@ -140,11 +157,15 @@ document.addEventListener("DOMContentLoaded", () => {
       item.className = "chat-item";
       item.href = "#";
       item.dataset.analysisId = analysis.id;
-      item.innerHTML = `
-        <span class="chat-item-icon">📄</span>
-        <span class="chat-item-text">${analysis.job_title}</span>
-        <span class="chat-item-date">${formatHistoryDate(analysis.created_at)}</span>
-      `;
+      item.append(
+        textElement("span", "chat-item-icon", "📄"),
+        textElement("span", "chat-item-text", analysis.job_title),
+        textElement(
+          "span",
+          "chat-item-date",
+          formatHistoryDate(analysis.created_at),
+        ),
+      );
       sidebarBody.appendChild(item);
     });
   }
@@ -554,7 +575,51 @@ document.addEventListener("DOMContentLoaded", () => {
   // or "•" is part of the <li> itself, not something we control), which
   // looked like markers popping in before their text.
   function renderFormattedText(el, text, animate = false) {
-    el.innerHTML = marked.parse(text);
+    if (!window.marked || !window.DOMPurify || !DOMPurify.isSupported) {
+      el.textContent = text;
+      return;
+    }
+    el.innerHTML = DOMPurify.sanitize(marked.parse(text), {
+      ALLOWED_TAGS: [
+        "p",
+        "br",
+        "strong",
+        "em",
+        "ul",
+        "ol",
+        "li",
+        "blockquote",
+        "pre",
+        "code",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "a",
+        "del",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+      ],
+      ALLOWED_ATTR: ["href", "title"],
+      ALLOW_DATA_ATTR: false,
+      ALLOW_ARIA_ATTR: false,
+    });
+    el.querySelectorAll("a").forEach((link) => {
+      const href = safeWebUrl(link.getAttribute("href"));
+      if (href) {
+        link.href = href;
+        link.rel = "noopener noreferrer";
+      } else {
+        link.removeAttribute("href");
+      }
+    });
     if (animate) revealBlocks(el);
   }
 
@@ -580,7 +645,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function appendChatMessage(role, content, animate = false) {
     const msg = document.createElement("div");
     msg.className = `chat-message ${role}`;
-    renderFormattedText(msg, content, animate);
+    if (role === "user") {
+      msg.textContent = content;
+      msg.style.whiteSpace = "pre-wrap";
+    } else {
+      renderFormattedText(msg, content, animate);
+    }
     chatMessages.appendChild(msg);
 
     if (animate) {
@@ -667,12 +737,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function renderSkillTags(skills, emptyLabel) {
+    const tags = document.createElement("div");
+    tags.className = "job-skill-tags";
     if (!skills || skills.length === 0) {
-      return `<span class="job-skill-tag none">${emptyLabel}</span>`;
+      tags.append(textElement("span", "job-skill-tag none", emptyLabel));
+      return tags;
     }
-    return skills
-      .map((s) => `<span class="job-skill-tag">${s}</span>`)
-      .join("");
+    skills.forEach((skill) =>
+      tags.append(textElement("span", "job-skill-tag", skill)),
+    );
+    return tags;
   }
 
   function renderJobs(jobs) {
@@ -690,26 +764,37 @@ document.addEventListener("DOMContentLoaded", () => {
       const salary = formatSalary(job.salary_min, job.salary_max);
       const metaParts = [job.company, job.location, salary].filter(Boolean);
 
-      card.innerHTML = `
-        <div class="job-card-header">
-          <div>
-            <h4 class="job-title">${job.title || "Untitled role"}</h4>
-            <p class="job-meta">${metaParts.join(" · ")}</p>
-          </div>
-          <div class="job-match-badge">${job.match_score}%</div>
-        </div>
-        <div class="job-skills">
-          <div>
-            <span class="job-skills-label matched">You have</span>
-            <div class="job-skill-tags">${renderSkillTags(job.matched_skills, "None detected")}</div>
-          </div>
-          <div>
-            <span class="job-skills-label missing">Missing</span>
-            <div class="job-skill-tags">${renderSkillTags(job.missing_skills, "Nothing specific")}</div>
-          </div>
-        </div>
-        ${job.url ? `<a class="job-apply-link" href="${job.url}" target="_blank" rel="noopener">View posting →</a>` : ""}
-      `;
+      const header = textElement("div", "job-card-header", "");
+      const details = document.createElement("div");
+      details.append(
+        textElement("h4", "job-title", job.title || "Untitled role"),
+        textElement("p", "job-meta", metaParts.join(" · ")),
+      );
+      header.append(
+        details,
+        textElement("div", "job-match-badge", `${job.match_score}%`),
+      );
+      const skills = textElement("div", "job-skills", "");
+      const matched = document.createElement("div");
+      matched.append(
+        textElement("span", "job-skills-label matched", "You have"),
+        renderSkillTags(job.matched_skills, "None detected"),
+      );
+      const missing = document.createElement("div");
+      missing.append(
+        textElement("span", "job-skills-label missing", "Missing"),
+        renderSkillTags(job.missing_skills, "Nothing specific"),
+      );
+      skills.append(matched, missing);
+      card.append(header, skills);
+      const href = safeWebUrl(job.url);
+      if (href) {
+        const link = textElement("a", "job-apply-link", "View posting →");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        card.append(link);
+      }
 
       jobResults.appendChild(card);
     });
