@@ -54,6 +54,25 @@ document.addEventListener("DOMContentLoaded", () => {
   let activeJobLocation = "";
   let jobRequestVersion = 0;
   let jobPageLoading = false;
+  let workspaceVersion = 0;
+  let historyRequestVersion = 0;
+  let analysisPending = false;
+
+  // A response or animation may update the screen only in its original workspace.
+  function invalidateWorkspace() {
+    workspaceVersion++;
+    clearInterval(loaderInterval);
+    analysisPending = false;
+    currentAnalysisId = null;
+    loader.classList.remove("show");
+    analyzeBtn.textContent = "Analyze ↗";
+    chatInput.disabled = false;
+    chatSendBtn.disabled = false;
+    chatInput.value = "";
+    clearJobSearch();
+    updateAnalyzeButton();
+    return workspaceVersion;
+  }
 
   function textElement(tag, className, text) {
     const element = document.createElement(tag);
@@ -171,31 +190,38 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function loadHistory() {
+    const requestVersion = ++historyRequestVersion;
+    const version = workspaceVersion;
     fetch("/history")
       .then((r) => r.json())
       .then((data) => {
+        if (requestVersion !== historyRequestVersion || version !== workspaceVersion) return;
         renderHistory(data.success ? data.analyses : []);
       })
-      .catch(() => renderHistory([]));
+      .catch(() => {
+        if (requestVersion === historyRequestVersion && version === workspaceVersion) renderHistory([]);
+      });
   }
 
   loadHistory();
 
   function loadAnalysis(analysisId) {
+    const version = invalidateWorkspace();
+    results.classList.remove("show");
+    chatMessages.innerHTML = "";
     fetch(`/analysis/${analysisId}`)
       .then((r) => r.json())
       .then((data) => {
+        if (version !== workspaceVersion) return;
         if (!data.success) {
           console.error("Failed to load analysis:", data.message);
           return;
         }
-        renderResults(data.feedback, false);
+        renderResults(data.feedback, false, version);
         currentAnalysisId = data.analysis_id;
         renderMessages(data.messages);
 
-        // Job results are never persisted — start fresh each time a
-        // past analysis is reopened, ready for a new search.
-        clearJobSearch();
+        // Job results are never persisted; reopening starts a fresh search.
         jobLocationInput.value = "";
 
         document.querySelectorAll(".chat-item").forEach((el) => {
@@ -205,7 +231,9 @@ document.addEventListener("DOMContentLoaded", () => {
           );
         });
       })
-      .catch((error) => console.error("Error loading analysis:", error));
+      .catch((error) => {
+        if (version === workspaceVersion) console.error("Error loading analysis:", error);
+      });
   }
 
   // Event delegation: sidebarBody's contents are built dynamically by
@@ -240,8 +268,8 @@ document.addEventListener("DOMContentLoaded", () => {
       .then((data) => {
         if (data.success) {
           updateAuthUI(false);
-          loadHistory();
           resetWorkspace();
+          loadHistory();
         }
       })
       .catch((error) => console.error("Logout failed:", error));
@@ -252,7 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ------------------------------------------------------------------ */
 
   function updateAnalyzeButton() {
-    analyzeBtn.disabled = !(selectedFile && jobInput.value.trim());
+    analyzeBtn.disabled = analysisPending || !(selectedFile && jobInput.value.trim());
   }
 
   function showFile(file) {
@@ -334,15 +362,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function resetWorkspace() {
+    invalidateWorkspace();
     clearFile();
     jobInput.value = "";
     updateAnalyzeButton();
-    loader.classList.remove("show");
-    analyzeBtn.textContent = "Analyze ↗";
     results.classList.remove("show");
     chatMessages.innerHTML = "";
-    currentAnalysisId = null;
-    clearJobSearch();
     jobLocationInput.value = "";
 
     document
@@ -488,13 +513,15 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function typeText(el, text, speed = 12) {
+  async function typeText(el, text, speed = 12, version = workspaceVersion) {
+    if (version !== workspaceVersion) return;
     el.textContent = "";
     const cursor = document.createElement("span");
     cursor.className = "typing-cursor";
     el.appendChild(cursor);
 
     for (const char of text) {
+      if (version !== workspaceVersion) break;
       cursor.insertAdjacentText("beforebegin", char);
       await sleep(speed);
     }
@@ -511,28 +538,33 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  async function typeList(listEl, items) {
+  async function typeList(listEl, items, version) {
+    if (version !== workspaceVersion) return;
     listEl.innerHTML = "";
     for (const item of items || []) {
+      if (version !== workspaceVersion) return;
       const li = document.createElement("li");
       listEl.appendChild(li);
-      await typeText(li, item, 8);
+      await typeText(li, item, 8, version);
       await sleep(150);
     }
   }
 
-  async function animateScore(finalScore) {
+  async function animateScore(finalScore, version) {
+    if (version !== workspaceVersion) return;
     const duration = 600;
     const steps = 30;
     const stepTime = duration / steps;
     for (let i = 1; i <= steps; i++) {
+      if (version !== workspaceVersion) return;
       scoreValue.textContent = Math.round((finalScore * i) / steps);
       await sleep(stepTime);
     }
-    scoreValue.textContent = finalScore;
+    if (version === workspaceVersion) scoreValue.textContent = finalScore;
   }
 
-  async function renderResults(feedback, animate = true) {
+  async function renderResults(feedback, animate = true, version = workspaceVersion) {
+    if (version !== workspaceVersion) return;
     // Reset everything before starting the sequence.
     scoreValue.textContent = "0";
     resultsSummary.textContent = "";
@@ -557,11 +589,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Reveal each section in sequence, like a conversational response
     // being written out rather than dumped on screen all at once.
-    await typeText(resultsSummary, feedback.summary ?? "", 10);
-    await animateScore(feedback.score ?? 0);
-    await typeList(strengthsList, feedback.strengths);
-    await typeList(skillGapsList, feedback.skill_gaps);
-    await typeList(suggestionsList, feedback.suggestions);
+    await typeText(resultsSummary, feedback.summary ?? "", 10, version);
+    await animateScore(feedback.score ?? 0, version);
+    await typeList(strengthsList, feedback.strengths, version);
+    await typeList(skillGapsList, feedback.skill_gaps, version);
+    await typeList(suggestionsList, feedback.suggestions, version);
   }
 
   /* ------------------------------------------------------------------ */
@@ -681,20 +713,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function sendChatMessage() {
     const question = chatInput.value.trim();
-    if (!question || !currentAnalysisId) return;
+    if (!question || !currentAnalysisId || chatInput.disabled) return;
+    const version = workspaceVersion;
+    const analysisId = currentAnalysisId;
 
     appendChatMessage("user", question, false);
     chatInput.value = "";
     chatInput.disabled = true;
     chatSendBtn.disabled = true;
 
-    fetch(`/analysis/${currentAnalysisId}/ask`, {
+    fetch(`/analysis/${analysisId}/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
     })
       .then((r) => r.json())
       .then((data) => {
+        if (version !== workspaceVersion || analysisId !== currentAnalysisId) return;
         chatInput.disabled = false;
         chatSendBtn.disabled = false;
         chatInput.focus();
@@ -710,6 +745,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       })
       .catch(() => {
+        if (version !== workspaceVersion || analysisId !== currentAnalysisId) return;
         chatInput.disabled = false;
         chatSendBtn.disabled = false;
         appendChatMessage("model", "Something went wrong. Try again.", false);
@@ -848,12 +884,21 @@ document.addEventListener("DOMContentLoaded", () => {
               loadedJobs.push(job);
             }
           }
+          // Keep pages comparable if any page falls back to keyword ranking.
+          const keywordOnly = data.ranking_method === "keyword" ||
+            loadedJobs.some((job) => job.ranking_method === "keyword");
+          if (keywordOnly) {
+            loadedJobs.forEach((job) => {
+              job.match_score = job.keyword_score;
+              job.ranking_method = "keyword";
+            });
+          }
           loadedJobs.sort((a, b) => b.match_score - a.match_score);
           renderJobs(loadedJobs);
           nextJobPage = page + 1;
           jobLoadMoreBtn.hidden = !data.has_more;
           jobSearchStatus.textContent = loadedJobs.length
-            ? `Showing ${loadedJobs.length} jobs ranked by resume match. Results may reorder as more jobs load.`
+            ? `Showing ${loadedJobs.length} jobs ranked by ${keywordOnly ? "keyword matches" : "resume match"}. Results may reorder as more jobs load.`
             : "";
         } else {
           showJobSearchError(data.message || "Something went wrong.", page > 1);
@@ -903,14 +948,15 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ------------------------------------------------------------------ */
 
   analyzeBtn.addEventListener("click", () => {
-    if (!selectedFile || !jobInput.value.trim()) return;
+    if (analysisPending || !selectedFile || !jobInput.value.trim()) return;
+    const version = invalidateWorkspace();
+    analysisPending = true;
     uploadError.textContent = "";
 
     // Clear any previous analysis's chat and job results immediately —
     // they shouldn't linger on screen while the new analysis loads.
-    currentAnalysisId = null;
+    results.classList.remove("show");
     chatMessages.innerHTML = "";
-    clearJobSearch();
     jobLocationInput.value = "";
 
     loader.classList.add("show");
@@ -928,15 +974,19 @@ document.addEventListener("DOMContentLoaded", () => {
     })
       .then((response) => response.json())
       .then(async (data) => {
+        if (version !== workspaceVersion) return;
         if (data.success) {
           finishAnalysisAnimation();
           await sleep(500);
+          if (version !== workspaceVersion) return;
 
           loader.classList.remove("show");
-          analyzeBtn.disabled = false;
+          analysisPending = false;
+          updateAnalyzeButton();
           analyzeBtn.textContent = "Analyze ↗";
 
-          await renderResults(data.feedback);
+          await renderResults(data.feedback, true, version);
+          if (version !== workspaceVersion) return;
           currentAnalysisId = data.analysis_id;
           renderMessages([]);
           loadHistory();
@@ -944,7 +994,8 @@ document.addEventListener("DOMContentLoaded", () => {
           clearInterval(loaderInterval);
 
           loader.classList.remove("show");
-          analyzeBtn.disabled = false;
+          analysisPending = false;
+          updateAnalyzeButton();
           analyzeBtn.textContent = "Analyze ↗";
 
           console.error("Analysis failed:", data.message);
@@ -953,10 +1004,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       })
       .catch((error) => {
+        if (version !== workspaceVersion) return;
         clearInterval(loaderInterval);
 
         loader.classList.remove("show");
-        analyzeBtn.disabled = false;
+        analysisPending = false;
+        updateAnalyzeButton();
         analyzeBtn.textContent = "Analyze ↗";
         console.error("Error:", error);
         uploadError.textContent = "Analysis failed. Please try again.";

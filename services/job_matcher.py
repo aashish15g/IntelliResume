@@ -1,10 +1,8 @@
 """
 services/job_matcher.py
 
-Searches Adzuna for job listings matching a given job title, and ranks
-them against a resume's skills using keyword extraction/matching —
-no embeddings, no API calls, fully explainable results (shows exactly
-which skills matched and which are missing per job).
+Searches Adzuna and ranks jobs using skill overlap and local embeddings.
+Falls back to keyword ranking when the embedding model is unavailable.
 """
 
 import os
@@ -12,10 +10,9 @@ import re
 import requests
 import logging
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
-import numpy as np
+from threading import Lock
 
-from services.skill_keywords import TECH_KEYWORDS, normalize_skill
+from services.skill_keywords import TECH_KEYWORDS, SKILL_ALIASES, normalize_skill
 
 load_dotenv()
 
@@ -24,9 +21,15 @@ ADZUNA_API_KEY = os.environ.get("ADZUNA_API_KEY")
 ADZUNA_COUNTRY = "us"
 ADZUNA_BASE_URL = f"https://api.adzuna.com/v1/api/jobs/{ADZUNA_COUNTRY}/search"
 
-# Pre-normalize the keyword list once, at import time, rather than
-# re-normalizing it on every single job comparison.
-_NORMALIZED_KEYWORDS = {normalize_skill(kw): kw for kw in TECH_KEYWORDS}
+# Search full names and aliases, returning one canonical name per skill.
+_CANONICAL_NAMES = {kw.lower(): kw for kw in TECH_KEYWORDS}
+_SKILL_VARIANTS = {
+    kw.lower(): _CANONICAL_NAMES[normalize_skill(kw)] for kw in TECH_KEYWORDS
+}
+_SKILL_VARIANTS.update({
+    alias: _CANONICAL_NAMES[target]
+    for alias, target in SKILL_ALIASES.items() if target in _CANONICAL_NAMES
+})
 
 logger = logging.getLogger(__name__)
 
@@ -90,25 +93,36 @@ def extract_skills_from_text(text: str) -> set:
     text_lower = text.lower()
     found = set()
 
-    for normalized_kw, canonical_kw in _NORMALIZED_KEYWORDS.items():
-        # (?<![a-z0-9]) / (?![a-z0-9]) — the keyword must not be
-        # immediately preceded or followed by a letter/digit. This
-        # still allows symbol-containing keywords like "C++" or ".NET"
-        # to match correctly, since symbols aren't alphanumeric.
-        pattern = r"(?<![a-z0-9])" + re.escape(normalized_kw) + r"(?![a-z0-9])"
+    for variant, canonical_kw in _SKILL_VARIANTS.items():
+        # C must not match the start of C++ or C#.
+        pattern = r"(?<![a-z0-9])" + re.escape(variant) + r"(?![a-z0-9+#])"
         if re.search(pattern, text_lower):
             found.add(canonical_kw)
 
     return found
 
 
-# Loads once, locally — no API calls, no rate limits. Only the
-# keyword-matching side is used by default; the embedding side is an
-# additional signal in rank_jobs_hybrid() below.
-_embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+_embedding_model = None
+_embedding_load_attempted = False
+_embedding_lock = Lock()
+
+
+def _get_embedding_model():
+    """Load on demand; a failed load uses keywords until app restart."""
+    global _embedding_model, _embedding_load_attempted
+    with _embedding_lock:
+        if not _embedding_load_attempted:
+            _embedding_load_attempted = True
+            try:
+                from sentence_transformers import SentenceTransformer
+                _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+            except Exception:
+                logger.warning('Embedding model unavailable; using keyword ranking.', exc_info=True)
+    return _embedding_model
 
 
 def _cosine_similarity(a, b) -> float:
+    import numpy as np
     a, b = np.array(a), np.array(b)
     denom = np.linalg.norm(a) * np.linalg.norm(b)
     return float(np.dot(a, b) / denom) if denom else 0.0
@@ -125,7 +139,10 @@ def _semantic_score(resume_skills: list, job_description: str) -> float:
         return 0.0
 
     resume_text = ", ".join(resume_skills)
-    embeddings = _embedding_model.encode([resume_text, job_description])
+    model = _get_embedding_model()
+    if model is None:
+        raise RuntimeError('Embedding model unavailable')
+    embeddings = model.encode([resume_text, job_description])
     raw = _cosine_similarity(embeddings[0], embeddings[1])
 
     FLOOR, CEILING = 0.05, 0.55
@@ -143,31 +160,24 @@ def rank_jobs_hybrid(resume_skills: list, jobs: list, keyword_weight: float = 0.
 
     keyword_weight controls the blend (0.6 = 60% keyword, 40% semantic).
     """
-    resume_set = {normalize_skill(s) for s in resume_skills}
+    rank_jobs_by_keywords(resume_skills, jobs)
+    if not jobs or not resume_skills or _get_embedding_model() is None:
+        return sorted(jobs, key=lambda j: j['match_score'], reverse=True)
 
-    for job in jobs:
-        description = job.get("description", "")
-        job_skills = extract_skills_from_text(description)
-        job_skills_normalized = {normalize_skill(s) for s in job_skills}
+    try:
+        # Apply semantic scores only after the entire batch succeeds.
+        semantic_scores = [_semantic_score(resume_skills, job.get('description') or '') for job in jobs]
+    except Exception:
+        logger.warning('Semantic scoring failed; using keyword ranking.', exc_info=True)
+        return sorted(jobs, key=lambda j: j['match_score'], reverse=True)
 
-        matched = job_skills_normalized & resume_set
-        missing = job_skills_normalized - resume_set
-        keyword_score = (
-            len(matched) / len(job_skills_normalized) * 100
-            if job_skills_normalized else 0
-        )
-
-        semantic_score = _semantic_score(resume_skills, description)
-
-        final_score = (keyword_score * keyword_weight) + (
-            semantic_score * (1 - keyword_weight)
-        )
-
-        job["match_score"] = round(final_score)
-        job["keyword_score"] = round(keyword_score)
-        job["semantic_score"] = round(semantic_score)
-        job["matched_skills"] = sorted(matched)
-        job["missing_skills"] = sorted(missing)
+    for job, semantic_score in zip(jobs, semantic_scores):
+        # Keep unrounded overlap for the original hybrid formula.
+        total = len(job['matched_skills']) + len(job['missing_skills'])
+        keyword_score = len(job['matched_skills']) / total * 100 if total else 0
+        job['match_score'] = round(keyword_score * keyword_weight + semantic_score * (1 - keyword_weight))
+        job['semantic_score'] = round(semantic_score)
+        job['ranking_method'] = 'hybrid'
 
     return sorted(jobs, key=lambda j: j["match_score"], reverse=True)
 
@@ -192,6 +202,9 @@ def rank_jobs_by_keywords(resume_skills: list, jobs: list) -> list:
             round(len(matched) / len(job_skills_normalized) * 100)
             if job_skills_normalized else 0
         )
+        job['keyword_score'] = job['match_score']
+        job['semantic_score'] = None
+        job['ranking_method'] = 'keyword'
         job["matched_skills"] = sorted(matched)
         job["missing_skills"] = sorted(missing)
 

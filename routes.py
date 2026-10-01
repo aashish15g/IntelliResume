@@ -2,9 +2,28 @@ from flask import render_template, request, redirect,url_for, jsonify
 from models import  User, Analysis, Message
 from flask_login import login_user, logout_user, current_user, login_required
 import re
+from sqlalchemy.exc import IntegrityError
 from services.resume_parser import ResumeExtractor
 from services.gemini_service import get_resume_feedback, user_followup
 from services.job_matcher import search_jobs, rank_jobs_hybrid, JobSearchError
+
+def read_credentials():
+    """Validate credentials before regex checks, database queries, or bcrypt."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, None, 'Please send a JSON object with email and password.'
+    email, password = data.get('email'), data.get('password')
+    if not isinstance(email, str) or not isinstance(password, str):
+        return None, None, 'Email and password must be text.'
+    if not email.strip() or not password:
+        return None, None, 'Please fill in all the fields.'
+    try:
+        password_bytes = password.encode('utf-8')
+    except UnicodeEncodeError:
+        return None, None, 'Please enter a valid password.'
+    if len(password_bytes) > 72:
+        return None, None, 'Password must be 72 bytes or fewer.'
+    return email.strip(), password, None
 
 def register_routes(app,db,bcrypt):
     max_resume_bytes = 10 * 1024 * 1024
@@ -19,18 +38,15 @@ def register_routes(app,db,bcrypt):
         email_pattern = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
         password_pattern = re.compile(r'^(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$')
 
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-
-        if not email or not password:
-            return jsonify({'success': False, 'message': 'Please fill in all the fields.'}), 400
+        email, password, error = read_credentials()
+        if error:
+            return jsonify({'success': False, 'message': error}), 400
 
         if not email_pattern.match(email):
             return jsonify({'success': False, 'message': 'invalid email format.'}), 400
         
         if not password_pattern.match(password):
-            return jsonify({'success': False, 'message': 'Password must be at least 8 characters and incude a number or special character'}), 400
+            return jsonify({'success': False, 'message': 'Password must be at least 8 characters and include both a number and a special character (!@#$%^&*).'}), 400
         
         if User.query.filter_by(email = email).first():
             return jsonify({'success': False, 'message': 'An account with this email already exists.'}), 400
@@ -40,17 +56,18 @@ def register_routes(app,db,bcrypt):
         user = User(email = email, hash_password = hashed_password)
 
         db.session.add(user)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            return jsonify({'success': False, 'message': 'An account with this email already exists.'}), 400
         return jsonify({'success': True})
     
     @app.route('/login', methods=['POST'])
     def login():
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-
-        if not email or not password:
-            return jsonify({'success': False, 'message': 'Plese fill in all the fields'}),400
+        email, password, error = read_credentials()
+        if error:
+            return jsonify({'success': False, 'message': error}), 400
         
 
         user = User.query.filter(User.email == email).first()
@@ -226,4 +243,6 @@ def register_routes(app,db,bcrypt):
 
         ranked_jobs = rank_jobs_hybrid(analysis.skills or [], jobs)
 
-        return jsonify({'success': True, 'jobs': ranked_jobs, 'has_more': search_result['has_more'] and page < 100})
+        return jsonify({'success': True, 'jobs': ranked_jobs,
+                        'ranking_method': ranked_jobs[0]['ranking_method'],
+                        'has_more': search_result['has_more'] and page < 100})
