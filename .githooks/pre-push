@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+# Git for Windows runs this hook with its bundled shell.
+cd "$(git rev-parse --show-toplevel)"
+if [ -x .venv/Scripts/python.exe ]; then
+    .venv/Scripts/python.exe scripts/check_private_files.py
+elif [ -x .venv/bin/python ]; then
+    .venv/bin/python scripts/check_private_files.py
+else
+    python scripts/check_private_files.py
+fi
+
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks git --redact --log-opts=--all .
+elif [ -x .local-tools/gitleaks/gitleaks.exe ]; then
+    .local-tools/gitleaks/gitleaks.exe git --redact --log-opts=--all .
+else
+    echo 'Push blocked: install Gitleaks to scan for secrets.' >&2
+    exit 1
+fi

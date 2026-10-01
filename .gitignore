@@ -1,5 +1,13 @@
 # Environment / secrets
-.env
+.env*
+!.env.example
+*.pem
+*.key
+*credentials*.json
+*service-account*.json
+.aws/
+.local-tools/
+.local-backups/
 
 # Python
 __pycache__/
@@ -11,9 +19,17 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+*.db-*
+*.sqlite-*
+*.sqlite3-*
+instance/
 
-# Flask-Migrate (optional — some teams commit this, some don't; see note below)
-migrations/
+# Test / build output
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
 
 # Editor / OS
 .vscode/
